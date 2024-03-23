@@ -3,8 +3,15 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma'
 
 export async function memoriesRoutes(app: FastifyInstance) {
-  app.get('/memories', async () => {
+  app.addHook('preHandler', async (request) => {
+    await request.jwtVerify()
+  })
+
+  app.get('/memories', async (request) => {
     const memories = await prisma.memory.findMany({
+      where: {
+        userId: request.user.sub,
+      },
       orderBy: {
         createdAt: 'asc',
       },
@@ -24,17 +31,17 @@ export async function memoriesRoutes(app: FastifyInstance) {
 
     const { id } = paramsSchema.parse(request.params)
 
-    const memory = await prisma.memory.findUnique({
+    const memory = await prisma.memory.findUniqueOrThrow({
       where: {
         id,
       },
     })
 
-    if (!memory) {
+    if (!memory.isPublic && memory.userId !== request.user.sub) {
       return {
-        statusCode: 404,
-        error: 'Not Found',
-        message: 'Memory not found',
+        statusCode: 403,
+        error: 'Forbidden',
+        message: 'You are not allowed to access this memory',
       }
     }
 
@@ -55,7 +62,7 @@ export async function memoriesRoutes(app: FastifyInstance) {
         content,
         coverUrl,
         isPublic,
-        userId: '1', // TODO
+        userId: request.user.sub,
       },
     })
 
@@ -77,7 +84,21 @@ export async function memoriesRoutes(app: FastifyInstance) {
 
     const { content, coverUrl, isPublic } = bodySchema.parse(request.body)
 
-    const memory = await prisma.memory.update({
+    let memory = await prisma.memory.findUniqueOrThrow({
+      where: {
+        id,
+      },
+    })
+
+    if (memory.userId !== request.user.sub) {
+      return {
+        statusCode: 403,
+        error: 'Forbidden',
+        message: 'You are not allowed to update this memory',
+      }
+    }
+
+    memory = await prisma.memory.update({
       where: {
         id,
       },
@@ -97,6 +118,20 @@ export async function memoriesRoutes(app: FastifyInstance) {
     })
 
     const { id } = paramsSchema.parse(request.params)
+
+    const memory = await prisma.memory.findUniqueOrThrow({
+      where: {
+        id,
+      },
+    })
+
+    if (memory.userId !== request.user.sub) {
+      return {
+        statusCode: 403,
+        error: 'Forbidden',
+        message: 'You are not allowed to update this memory',
+      }
+    }
 
     await prisma.memory.delete({
       where: {
